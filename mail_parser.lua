@@ -20,15 +20,12 @@ function mail_parser.unquote(quoted_string)
 end
 
 function mail_parser.extract_headers(lines, start_line_number, boundary)
-	local headers, end_line_number = {}, nil
+	local headers, end_line_number = {}, #lines + 1
 	local last_header = nil
 	for i = start_line_number or 1, #lines do
 		local line = lines[i]
 		-- exit on an empty line (the next line is the beginning of a body) or on a boundary
-		if (line == "") then
-			end_line_number = i + 1
-			break
-		elseif boundary and line:find(boundary, 1, true) then
+		if (line == "") or (boundary and ((line == '--' .. boundary) or (line == boundary .. '--'))) then
 			end_line_number = i
 			break
 		end
@@ -45,7 +42,63 @@ function mail_parser.extract_headers(lines, start_line_number, boundary)
 	return headers, end_line_number
 end
 
--- TODO: extract_body, parse_part, parse
+function mail_parser.extract_body(lines, start_line_number, boundary, encoding, charset)
+	local body, end_line_number = "", #lines + 1
+	for i = start_line_number or 1, #lines do
+		local line = lines[i]
+		-- exit on a boundary
+		if boundary and ((line == '--' .. boundary) or (line == boundary .. '--')) then
+			end_line_number = i
+			break
+		end
+		-- process a continuos or new line
+		if (encoding == 'quoted-printable') then
+			local continous = (line:sub(#line) == "=")
+			body = body .. mime.unqp(line) .. (continuous and "" or "\n")
+		elseif (encoding == 'base64') then
+			body = body .. mime.unb64(line)
+		else
+			body = body .. line .. "\n"
+		end
+	end
+	-- convert from a charset
+	if charset then
+		local to_utf8_mapping_table = convert_charsets.get_mapping_table_to_utf8(convert_charsets.normalize_charset_name(charset))
+		body = convert_charsets.to_utf8(body, to_utf8_mapping_table)
+	end
+	return body, end_line_number
+end
+
+function mail_parser.parse_parts(lines, start_line_number, content_type)
+	local parts, end_line_number = {}, #lines + 1
+	local _, _, multipart, boundary = headers["content-type"]:find('^multipart/([^;]+);%s+boundary="?([^"]+)"?$')
+	local i = start_line_number
+	while (i <= #lines) do
+		if (lines[i] == '--' .. boundary) then
+			local parsed, sub_end_line_number = mail_parser.parse(lines, i + 1, boundary)
+			table.insert(parts, parsed)
+			i = sub_end_line_number
+		elseif (lines[i] == boundary .. '--') then
+			end_line_number = i
+			break
+		end
+		i = i + 1
+	end
+	return parts,
+
+
+function mail_parser.parse(lines, start_line_number, boundary)
+	-- get headers
+	local headers, headers_end_line_number = mail_parser.extract_headers(lines, start_line_number, boundary)
+	-- process multipart
+	local _, _, multipart, sub_boundary = headers["content-type"]:find('^multipart/([^;]+);%s+boundary="?([^"]+)"?$')
+	for i = headers_end_line_number, #lines do
+	end
+	-- get body
+	local body, end_line_number = mail_parser.extract_body(lines, headers_end_line_number, boundary, encoding, charset)
+
+	return headers, body, end_line_number
+end
 
 -- main method for CLI
 function mail_parser.main(arg)
