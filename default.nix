@@ -3,7 +3,7 @@
 with import <nixpkgs> {};
 
 let
-  env = luaPackages.lua.withPackages(ps: with ps; [ luasocket convert-charsets ]);
+  env = luaPackages.lua.withPackages(ps: with ps; [ lfs luasocket convert-charsets ]);
 in
 stdenv.mkDerivation {
   name = "lua-env";

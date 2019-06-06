@@ -46,7 +46,6 @@ function mail_parser.extract_headers(lines, start_line_number, boundary)
 			header = last_header
 			_, _, value = line:find("^%s+(.*)$")
 		end
-		--print('debug: extract_headers: header value = ', try_continuous, header, value)
 		-- process a continuos or new header
 		if value then
 			header = header:lower()
@@ -60,7 +59,6 @@ end
 
 function mail_parser.extract_body(lines, start_line_number, boundary, encoding)
 	local body, end_line_number = "", #lines + 1
-	local decoding_buffer = ""
 	for i = start_line_number or 1, #lines do
 		local line = lines[i]
 		-- exit on a boundary
@@ -70,18 +68,14 @@ function mail_parser.extract_body(lines, start_line_number, boundary, encoding)
 		end
 		-- process a continuos or new line
 		if (encoding == 'quoted-printable') then
-			-- if it is continuous then add to the buffer
-			if (line:sub(-1) == "=") then
-				decoding_buffer = decoding_buffer .. line:sub(1, -2)
-			-- if it is not continous then decode including the buffer and add to the body
-			else
-				decoding_buffer = decoding_buffer .. line
-				-- mime.unqp do no know how to decode and empty string, so it returns null
-				body = body .. (mime.unqp(decoding_buffer) or "") .. "\n"
-				decoding_buffer = ""
-			end
+			-- mime.unqp do no know how to decode and empty string, so it returns null
+			body = body .. ((line:sub(-1) == "=")
+				-- if it is continuous then add without the suffix and \n
+				and (mime.unqp(line:sub(1, -2)) or "")
+				-- if it is non-continuous then add with \n
+				or ((mime.unqp(line) or "") .. "\n"))
 		elseif (encoding == 'base64') then
-			-- TODO: concatenate multiline base64 into decoding_buffer
+			-- base64 can be decoded by individual lines
 			body = body .. mime.unb64(line)
 		else
 			body = body .. line .. "\n"
@@ -169,6 +163,46 @@ function mail_parser.parse(lines, start_line_number, boundary)
 	return content, end_line_number
 end
 
+local function print_table(table_to_print, prefix)
+	for key, value in pairs(table_to_print) do
+		if type(value) ~= 'table' then
+			print(prefix .. key, value)
+		else
+			print_table(value, prefix .. key .. ".")
+		end
+	end
+end
+
+local function export_parsed(parsed, directory)
+	local lfs = require('lfs')
+	lfs.mkdir(directory)
+	-- data body
+	if parsed['body-name'] then
+		local file_out = assert(open(directory .. "/" .. parsed['body-name'], "wb"))
+		file_out:write(parsed['body'])
+		file_out:close()
+		parsed['body'] = nil
+	-- text body
+	elseif parsed['body-type'] then
+		local file_out = assert(open(directory .. "/" .. parsed['body-type']:gsub("/", "."), "w"))
+		file_out:write(parsed['body'])
+		file_out:close()
+		parsed['body'] = nil
+	-- parts
+	elseif parsed['parts'] then
+		for i, part in pairs(parsed['parts']) do
+			export_parsed(part, directory .. "/part_" .. i)
+		end
+		parsed['parts'] = nil
+	end
+	-- headers
+	local file_out = assert(open(directory .. "/headers.txt", "w"))
+	for key, value in pairs(parsed) do
+		file_out:write(key .. "\t" .. value .. "\n")
+	end
+	file_out:close()
+end
+
 -- main method for CLI
 function mail_parser.main(arg)
 	if (#arg == 0 or arg[#arg] == "--help") then
@@ -176,7 +210,7 @@ function mail_parser.main(arg)
 		stderr:write("Parse a give mail message file and extracts its content into a given output directory.\n")
 		return 1
 	end
-	local opt_input, out_putput = arg[1], arg[2]
+	local opt_input, out_directory = arg[1], arg[2]
 	-- read file
 	local file_in, lines = (opt_input == "-") and stdin or assert(open(opt_input, "r")), {}
 	for line in file_in:lines() do
@@ -184,16 +218,9 @@ function mail_parser.main(arg)
 	end
 	file_in:close()
 	-- process file
-	function pp(table_to_print, prefix)
-		for k,v in pairs(table_to_print) do
-			if type(v) == 'table' then
-				pp(v, k .. ".")
-			else
-				print(prefix .. k, v)
-			end
-		end
-	end
-	pp(mail_parser.parse(lines, nil, nil), "")
+	local parsed, count = mail_parser.parse(lines, nil, nil)
+	export_parsed(parsed, out_directory)
+	--print_table(parsed, "")
 	return 0
 end
 
