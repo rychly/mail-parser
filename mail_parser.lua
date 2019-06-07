@@ -17,18 +17,21 @@ function IteratorStack:create(iterator)
 	setmetatable(new, self)
 	new.iterator = iterator
 	new.stack = {}
+	new.active = true
+	new.counter = 0
 	return new
 end
 
 function IteratorStack:next()
-	local value = table.remove(self.stack)
-	if not value then
-		value = self.iterator()
+	if self.active then
+		local value = table.remove(self.stack) or self.iterator()
+		if value then
+			self.counter = self.counter + 1
+		end
+		return (value:sub(-1) == '\x0D') and value:sub(1, -2) or value
+	else
+		return nil
 	end
-	if (value:sub(-1) == '\x0D') then
-		value = value:sub(1, -2)
-	end
-	return value
 end
 
 function IteratorStack:values()
@@ -37,6 +40,11 @@ end
 
 function IteratorStack:insert(value)
 	table.insert(self.stack, value)
+	self.counter = self.counter - 1
+end
+
+function IteratorStack:close()
+	self.active = false
 end
 
 local function print_table(table_to_print, prefix)
@@ -185,12 +193,12 @@ function _M.extract_body(lines, boundary, encoding)
 	return body
 end
 
-function _M.parse_parts(lines, boundary)
+function _M.parse_parts(lines, boundary, first_content_type, number_of_lines)
 	local parts = {}
 	for line in lines:values() do
 		-- start processing of a part on a boundary entry tag
 		if (line == '--' .. boundary) then
-			local parsed = _M.parse(lines, boundary)
+			local parsed = _M.parse(lines, boundary, first_content_type, number_of_lines)
 			table.insert(parts, parsed)
 		-- exit on a boundary exit tag (the boundary line can be consumed here, it wont be needed anymore)
 		elseif (line == '--' .. boundary .. '--') then
@@ -200,14 +208,14 @@ function _M.parse_parts(lines, boundary)
 	return parts
 end
 
-function _M.parse(lines, boundary)
+function _M.parse(lines, boundary, first_content_type, number_of_lines)
 	-- get headers
 	local content = _M.extract_headers(lines, boundary)
 	-- check the content type
 	local detected_type, description, specification = _M.parse_content_type(content["content-type"])
 	-- parts in the case of a multipart content (the specification is a boundary)
 	if (detected_type == 'multipart') then
-		content['parts'] = _M.parse_parts(lines, specification)
+		content['parts'] = _M.parse_parts(lines, specification, first_content_type, number_of_lines)
 	-- text body in a charset in the case of a text content (the specification is the charset)
 	elseif (detected_type == 'text') then
 		content['body'] = _M.extract_body(lines, boundary, content["content-transfer-encoding"])
@@ -223,25 +231,35 @@ function _M.parse(lines, boundary)
 		content['body-type'] = description
 		content['body-name'] = specification
 	end
+	-- looking only for the first occurence with the matching content type or reading only a limited number of lines
+	if (first_content_type and content['body-type'] and content['body-type']:find("^" .. first_content_type .. "$"))
+	or (number_of_lines and (lines.counter >= number_of_lines)) then
+			lines:close()
+	end
 	return content
 end
 
 -- main method for CLI
 function _M.main(arg)
 	if (#arg == 0 or arg[#arg] == "--help") then
-		stderr:write("Usage: " .. arg[0] .. " <mail-message-file> <output-directory>\n")
+		stderr:write("Usage: " .. arg[0] .. " <mail-message-file> <output-directory> [first-content-type] [number-of-input-lines]\n")
 		stderr:write("Parse a give mail message file and extracts its content into a given output directory.\n")
+		stderr:write("Optionally, the parsing and the extraction can stop after:\n")
+		stderr:write("* the first (full pattern-matching) occurence of a given MIME content type (i.e., it can be a lua RE pattern without '^' and '$' that are implicit),\n")
+		stderr:write("* the reading a given number of input lines (the processing of a content starting on a line before the given number will be finished).\n")
 		return 1
 	end
-	local opt_input, out_directory = arg[1], arg[2]
+	-- process args
+	local opt_input, out_directory, first_content_type, number_of_lines = arg[1], arg[2], arg[3], tonumber(arg[4])
 	-- read and parse file
 	local file_in = (opt_input == "-") and stdin or assert(open(opt_input, "r"))
 	local linesIteratorStack = IteratorStack:create(file_in:lines())
-	local parsed = _M.parse(linesIteratorStack, nil)
+	local parsed = _M.parse(linesIteratorStack, nil, first_content_type, number_of_lines)
 	file_in:close()
 	-- print/export parsed
 	export_parsed(parsed, out_directory)
 	--print_table(parsed, "")
+	stderr:write("Done! Processed " .. linesIteratorStack.counter .. " lines of the input file.")
 	return 0
 end
 
