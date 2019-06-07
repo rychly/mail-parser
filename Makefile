@@ -9,6 +9,5 @@ all:
 install:
 	mkdir -p $(LUA_LUADIR)/mail_parser
 	cp mail_parser.lua $(LUA_LUADIR)
-	cp mail_parser/*.lua $(LUA_LUADIR)/mail_parser
 	mkdir -p $(LUA_BINDIR)
 	cp mail_parser-shell.sh $(LUA_BINDIR)/mail-parser

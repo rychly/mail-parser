@@ -69,7 +69,7 @@ function ParsedContent:print(prefix)
 end
 
 function ParsedContent:export(directory)
-	local lfs = require('lfs')
+	local lfs = require('lfs') -- from luafilesystem, see https://keplerproject.github.io/luafilesystem/
 	lfs.mkdir(directory)
 	-- data body
 	if self['body-name'] then
@@ -135,8 +135,7 @@ end
 -- Module
 
 function _M.from_charset_to_utf8(charset, text)
-	-- TODO: move `gsub("-", "_"):upper()` into convert_charsets.normalize_charset_name
-	local to_utf8_mapping_table = convert_charsets.get_mapping_table_to_utf8(convert_charsets.normalize_charset_name(charset:gsub("-", "_"):upper()))
+	local to_utf8_mapping_table = convert_charsets.get_mapping_table_to_utf8(convert_charsets.normalize_charset_name(charset))
 	return convert_charsets.to_utf8(text, to_utf8_mapping_table)
 end
 
@@ -279,7 +278,7 @@ function _M.parse(lines, boundary, first_content_type, number_of_lines)
 	-- looking only for the first occurence with the matching content type or reading only a limited number of lines
 	if (first_content_type and content['body-type'] and content['body-type']:find("^" .. first_content_type .. "$"))
 	or (number_of_lines and (lines.counter >= number_of_lines)) then
-			lines:close()
+		lines:close()
 	end
 	return content
 end
