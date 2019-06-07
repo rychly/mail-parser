@@ -7,7 +7,9 @@ local stdin, stdout, stderr, open, close, read, write = io.stdin, io.stdout, io.
 -- Module declaration
 local _M = {}
 
--- PRIVATE FUNCTIONS
+-- PRIVATE FUNCTIONS and public functions of sub-classes
+
+-- A wrapper for the lines iterator with stack and counter abilities
 
 local IteratorStack = {}
 IteratorStack.__index = IteratorStack
@@ -27,11 +29,10 @@ function IteratorStack:next()
 		local value = table.remove(self.stack) or self.iterator()
 		if value then
 			self.counter = self.counter + 1
+			return (value:sub(-1) == '\x0D') and value:sub(1, -2) or value
 		end
-		return (value:sub(-1) == '\x0D') and value:sub(1, -2) or value
-	else
-		return nil
 	end
+	return nil
 end
 
 function IteratorStack:values()
@@ -47,47 +48,91 @@ function IteratorStack:close()
 	self.active = false
 end
 
-local function print_table(table_to_print, prefix)
-	for key, value in pairs(table_to_print) do
+-- A wrapper for the parsed content
+
+local ParsedContent = {}
+ParsedContent.__index = ParsedContent
+
+function ParsedContent:create(initial_table)
+	setmetatable(initial_table, self)
+	return initial_table
+end
+
+function ParsedContent:print(prefix)
+	for key, value in pairs(self) do
 		if type(value) ~= 'table' then
-			print(prefix .. key, value)
-		else
-			print_table(value, prefix .. key .. ".")
+			print((prefix or "") .. key, value)
+		elseif (type(value) ~= 'function') then
+			ParsedContent.print(value, (prefix or "") .. key .. ".")
 		end
 	end
 end
 
-local function export_parsed(parsed, directory)
+function ParsedContent:export(directory)
 	local lfs = require('lfs')
 	lfs.mkdir(directory)
 	-- data body
-	if parsed['body-name'] then
-		local file_out = assert(open(directory .. "/" .. parsed['body-name'], "wb"))
-		file_out:write(parsed['body'])
+	if self['body-name'] then
+		local file_out = assert(open(directory .. "/" .. self['body-name'], "wb"))
+		file_out:write(self['body'])
 		file_out:close()
-		parsed['body'] = nil
 	-- text body
-	elseif parsed['body-type'] then
-		local file_out = assert(open(directory .. "/" .. parsed['body-type']:gsub("/", "."), "w"))
-		file_out:write(parsed['body'])
+	elseif self['body-type'] then
+		local file_out = assert(open(directory .. "/" .. self['body-type']:gsub("/", "."), "w"))
+		file_out:write(self['body'])
 		file_out:close()
-		parsed['body'] = nil
 	-- parts
-	elseif parsed['parts'] then
-		for i, part in pairs(parsed['parts']) do
-			export_parsed(part, directory .. "/part_" .. i)
+	elseif self['parts'] then
+		for i, part in pairs(self['parts']) do
+			ParsedContent.export(part, directory .. string.format("/part%02d", i))
 		end
-		parsed['parts'] = nil
 	end
 	-- headers
 	local file_out = assert(open(directory .. "/headers.txt", "w"))
-	for key, value in pairs(parsed) do
-		file_out:write(key .. "\t" .. value .. "\n")
+	for key, value in pairs(self) do
+		if (key ~= 'body') and (key ~= 'parts') and (type(value) ~= 'function') then
+			file_out:write(key .. "\t" .. value .. "\n")
+		end
 	end
 	file_out:close()
 end
 
+function ParsedContent:getFromName()
+	local from = self['from'] or self['return-path']
+	-- cannot be in quoted-printable as all headers are already unquoted by the _M.extract_headers(...)
+	return from and from:gsub('^%s*"?%s*(..-)%s*"?%s*<[^>]*>.-$', '%1') or nil
+end
+
+function ParsedContent:getFromAddress()
+	local from = self['from'] or self['return-path']
+	return from and from:gsub('^.-<?([^<>@]+@[^<>@]+)>?.-$', '%1') or nil
+end
+
+function ParsedContent:getSubject()
+	-- cannot be in quoted-printable as all headers are already unquoted by the _M.extract_headers(...)
+	return self['subject']
+end
+
+function ParsedContent:getFirstBody(content_type_pattern)
+	local body = nil
+	-- look for a body with matching content type
+	if self['body-type'] and self['body-type']:find("^" .. content_type_pattern .. "$") then
+		body = self['body']
+	-- search also the parts if necessary
+	elseif self['parts'] then
+		for i, part in pairs(self['parts']) do
+			body = ParsedContent.getFirstBody(part, content_type_pattern)
+			if body then
+				break
+			end
+		end
+	end
+	return body
+end
+
 -- PUBLIC FUNCTIONS
+
+-- Module
 
 function _M.from_charset_to_utf8(charset, text)
 	-- TODO: move `gsub("-", "_"):upper()` into convert_charsets.normalize_charset_name
@@ -210,7 +255,7 @@ end
 
 function _M.parse(lines, boundary, first_content_type, number_of_lines)
 	-- get headers
-	local content = _M.extract_headers(lines, boundary)
+	local content = ParsedContent:create(_M.extract_headers(lines, boundary))
 	-- check the content type
 	local detected_type, description, specification = _M.parse_content_type(content["content-type"])
 	-- parts in the case of a multipart content (the specification is a boundary)
@@ -239,7 +284,8 @@ function _M.parse(lines, boundary, first_content_type, number_of_lines)
 	return content
 end
 
--- main method for CLI
+-- A Main method for CLI
+
 function _M.main(arg)
 	if (#arg == 0 or arg[#arg] == "--help") then
 		stderr:write("Usage: " .. arg[0] .. " <mail-message-file> <output-directory> [first-content-type] [number-of-input-lines]\n")
@@ -257,9 +303,9 @@ function _M.main(arg)
 	local parsed = _M.parse(linesIteratorStack, nil, first_content_type, number_of_lines)
 	file_in:close()
 	-- print/export parsed
-	export_parsed(parsed, out_directory)
-	--print_table(parsed, "")
-	stderr:write("Done! Processed " .. linesIteratorStack.counter .. " lines of the input file.")
+	parsed:export(out_directory)
+	--parsed:print(nil)
+	stderr:write(string.format("Done! Processed %d lines of the input file for a mail from '%s' <%s>, subject '%s' and the first text body:\n%s", linesIteratorStack.counter, parsed:getFromName(), parsed:getFromAddress(), parsed:getSubject(), parsed:getFirstBody('text/.*')))
 	return 0
 end
 
