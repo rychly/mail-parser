@@ -114,20 +114,21 @@ function ParsedContent:getSubject()
 end
 
 function ParsedContent:getFirstBody(content_type_pattern)
-	local body = nil
+	local body, content_type = nil
 	-- look for a body with matching content type
 	if self['body-type'] and self['body-type']:find("^" .. content_type_pattern .. "$") then
 		body = self['body']
+		content_type = self['body-type']
 	-- search also the parts if necessary
 	elseif self['parts'] then
 		for i, part in pairs(self['parts']) do
-			body = ParsedContent.getFirstBody(part, content_type_pattern)
+			body, content_type = ParsedContent.getFirstBody(part, content_type_pattern)
 			if body then
 				break
 			end
 		end
 	end
-	return body
+	return body, content_type
 end
 
 -- PUBLIC FUNCTIONS
@@ -304,7 +305,8 @@ function _M.main(arg)
 	-- print/export parsed
 	parsed:export(out_directory)
 	--parsed:print(nil)
-	stderr:write(string.format("Done! Processed %d lines of the input file for a mail from '%s' <%s>, subject '%s' and the first text body:\n%s", linesIteratorStack.counter, parsed:getFromName(), parsed:getFromAddress(), parsed:getSubject(), parsed:getFirstBody('text/.*')))
+	local body, content_type = parsed:getFirstBody('text/.*')
+	stderr:write(string.format("Done! Processed %d lines of the input file for a mail from '%s' <%s>, subject '%s' and the first '%s' body:\n%s", linesIteratorStack.counter, parsed:getFromName(), parsed:getFromAddress(), parsed:getSubject(), content_type, body))
 	return 0
 end
 
