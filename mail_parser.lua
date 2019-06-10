@@ -29,7 +29,8 @@ function _M.IteratorStack:next()
 		local value = table.remove(self.stack) or self.iterator()
 		if value then
 			self.counter = self.counter + 1
-			return (value:sub(-1) == '\x0D') and value:sub(1, -2) or value
+			-- strip trailing CR (must check as byte because the interpretation of '\x0D' is platform-dependent and does not work on ARM)
+			return (value:sub(-1):byte() == 13) and value:sub(1, -2) or value
 		end
 	end
 	return nil
@@ -98,13 +99,13 @@ function _M.ParsedContent:export(directory)
 end
 
 function _M.ParsedContent:getFromName()
-	local from = self['from'] or self['return-path']
+	local from = self['from'] or self['return-path'] or self['mail from']
 	-- cannot be in quoted-printable as all headers are already unquoted by the _M.extract_headers(...)
 	return from and from:gsub('^%s*"?%s*(..-)%s*"?%s*<[^>]*>.-$', '%1') or nil
 end
 
 function _M.ParsedContent:getFromAddress()
-	local from = self['from'] or self['return-path']
+	local from = self['from'] or self['return-path'] or self['mail from']
 	return from and from:gsub('^.-<?([^<>@]+@[^<>@]+)>?.-$', '%1') or nil
 end
 
@@ -193,8 +194,8 @@ function _M.extract_headers(lines, boundary)
 			lines:insert(line)
 			break
 		end
-		-- parse a new header
-		local _, _, header, value = line:find("^([^:%s]+):%s*(.*)$")
+		-- parse a new header (the header name is at least two characters separated by at most one space, to parse also headers before <<MAIL-DATA>> for mail-server spool files)
+		local _, _, header, value = line:find("^([^:%s]+ ?[^:%s]+):%s*(.*)$")
 		-- parse a continuos header
 		local try_continuous = not header
 		if try_continuous then
@@ -266,7 +267,7 @@ function _M.parse(lines, boundary, first_content_type, number_of_lines)
 		content['body'] = _M.extract_body(lines, boundary, content["content-transfer-encoding"])
 		content['body-type'] = 'text/' .. description
 		-- convert from the charset
-		if specification then
+		if (specification ~= 'us-ascii') then
 			content['body'] = _M.from_charset_to_utf8(specification, content['body'])
 			content['body-original-charset'] = specification
 		end
