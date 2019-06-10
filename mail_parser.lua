@@ -7,14 +7,14 @@ local stdin, stdout, stderr, open, close, read, write = io.stdin, io.stdout, io.
 -- Module declaration
 local _M = {}
 
--- PRIVATE FUNCTIONS and public functions of sub-classes
+-- SUB-CLASSES
 
 -- A wrapper for the lines iterator with stack and counter abilities
 
-local IteratorStack = {}
-IteratorStack.__index = IteratorStack
+_M.IteratorStack = {}
+_M.IteratorStack.__index = _M.IteratorStack
 
-function IteratorStack:create(iterator)
+function _M.IteratorStack:create(iterator)
 	local new = {}
 	setmetatable(new, self)
 	new.iterator = iterator
@@ -24,7 +24,7 @@ function IteratorStack:create(iterator)
 	return new
 end
 
-function IteratorStack:next()
+function _M.IteratorStack:next()
 	if self.active then
 		local value = table.remove(self.stack) or self.iterator()
 		if value then
@@ -35,40 +35,40 @@ function IteratorStack:next()
 	return nil
 end
 
-function IteratorStack:values()
+function _M.IteratorStack:values()
 	return function () return self:next() end
 end
 
-function IteratorStack:insert(value)
+function _M.IteratorStack:insert(value)
 	table.insert(self.stack, value)
 	self.counter = self.counter - 1
 end
 
-function IteratorStack:close()
+function _M.IteratorStack:close()
 	self.active = false
 end
 
 -- A wrapper for the parsed content
 
-local ParsedContent = {}
-ParsedContent.__index = ParsedContent
+_M.ParsedContent = {}
+_M.ParsedContent.__index = _M.ParsedContent
 
-function ParsedContent:create(initial_table)
+function _M.ParsedContent:create(initial_table)
 	setmetatable(initial_table, self)
 	return initial_table
 end
 
-function ParsedContent:print(prefix)
+function _M.ParsedContent:print(prefix)
 	for key, value in pairs(self) do
 		if type(value) ~= 'table' then
 			print((prefix or "") .. key, value)
 		elseif (type(value) ~= 'function') then
-			ParsedContent.print(value, (prefix or "") .. key .. ".")
+			_M.ParsedContent.print(value, (prefix or "") .. key .. ".")
 		end
 	end
 end
 
-function ParsedContent:export(directory)
+function _M.ParsedContent:export(directory)
 	local lfs = require('lfs') -- from luafilesystem, see https://keplerproject.github.io/luafilesystem/
 	lfs.mkdir(directory)
 	-- data body
@@ -84,7 +84,7 @@ function ParsedContent:export(directory)
 	-- parts
 	elseif self['parts'] then
 		for i, part in pairs(self['parts']) do
-			ParsedContent.export(part, directory .. string.format("/part%02d", i))
+			_M.ParsedContent.export(part, directory .. string.format("/part%02d", i))
 		end
 	end
 	-- headers
@@ -97,23 +97,23 @@ function ParsedContent:export(directory)
 	file_out:close()
 end
 
-function ParsedContent:getFromName()
+function _M.ParsedContent:getFromName()
 	local from = self['from'] or self['return-path']
 	-- cannot be in quoted-printable as all headers are already unquoted by the _M.extract_headers(...)
 	return from and from:gsub('^%s*"?%s*(..-)%s*"?%s*<[^>]*>.-$', '%1') or nil
 end
 
-function ParsedContent:getFromAddress()
+function _M.ParsedContent:getFromAddress()
 	local from = self['from'] or self['return-path']
 	return from and from:gsub('^.-<?([^<>@]+@[^<>@]+)>?.-$', '%1') or nil
 end
 
-function ParsedContent:getSubject()
+function _M.ParsedContent:getSubject()
 	-- cannot be in quoted-printable as all headers are already unquoted by the _M.extract_headers(...)
 	return self['subject']
 end
 
-function ParsedContent:getFirstBody(content_type_pattern)
+function _M.ParsedContent:getFirstBody(content_type_pattern)
 	local body, content_type = nil
 	-- look for a body with matching content type
 	if self['body-type'] and self['body-type']:find("^" .. content_type_pattern .. "$") then
@@ -122,7 +122,7 @@ function ParsedContent:getFirstBody(content_type_pattern)
 	-- search also the parts if necessary
 	elseif self['parts'] then
 		for i, part in pairs(self['parts']) do
-			body, content_type = ParsedContent.getFirstBody(part, content_type_pattern)
+			body, content_type = _M.ParsedContent.getFirstBody(part, content_type_pattern)
 			if body then
 				break
 			end
@@ -255,7 +255,7 @@ end
 
 function _M.parse(lines, boundary, first_content_type, number_of_lines)
 	-- get headers
-	local content = ParsedContent:create(_M.extract_headers(lines, boundary))
+	local content = _M.ParsedContent:create(_M.extract_headers(lines, boundary))
 	-- check the content type
 	local detected_type, description, specification = _M.parse_content_type(content["content-type"])
 	-- parts in the case of a multipart content (the specification is a boundary)
@@ -299,7 +299,7 @@ function _M.main(arg)
 	local opt_input, out_directory, first_content_type, number_of_lines = arg[1], arg[2], arg[3], tonumber(arg[4])
 	-- read and parse file
 	local file_in = (opt_input == "-") and stdin or assert(open(opt_input, "r"))
-	local linesIteratorStack = IteratorStack:create(file_in:lines())
+	local linesIteratorStack = _M.IteratorStack:create(file_in:lines())
 	local parsed = _M.parse(linesIteratorStack, nil, first_content_type, number_of_lines)
 	file_in:close()
 	-- print/export parsed
