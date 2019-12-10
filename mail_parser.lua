@@ -222,14 +222,15 @@ function _M.extract_body(lines, boundary, encoding)
 			break
 		end
 		-- process a continuos or new line
-		if (encoding == 'quoted-printable') then
+		-- <encoding> pass from header may be uppercase
+		if (encoding == 'quoted-printable' or encoding == 'QUOTED-PRINTABLE') then
 			-- mime.unqp do no know how to decode and empty string, so it returns null
 			body = body .. ((line:sub(-1) == "=")
 				-- if it is continuous then add without the suffix and \n
 				and (mime.unqp(line:sub(1, -2)) or "")
 				-- if it is non-continuous then add with \n
 				or ((mime.unqp(line) or "") .. "\n"))
-		elseif (encoding == 'base64') then
+		elseif (encoding == 'base64' or encoding == 'BASE64') then
 			-- base64 can be decoded by individual lines
 			body = body .. mime.unb64(line)
 		else
