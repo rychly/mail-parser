@@ -2,11 +2,11 @@
 
 Lua scripts to parse mail messages, plain or in MIME format.
 
-## Shell Script `mail_parser*.sh`
+## Shell Script `mail-parser.sh`
 
 ### Usage
 
-*	`./mail_parser-nix.sh <mail-message-file> <output-directory> [first-content-type] [number-of-input-lines]`
+*	`./mail-parser.sh <mail-message-file> <output-directory> [first-content-type] [number-of-input-lines]`
 
 Parse a give mail message file and extracts its content into a given output directory.
 Optionally, the parsing and the extraction can stop after:
@@ -17,7 +17,7 @@ Optionally, the parsing and the extraction can stop after:
 ### Example
 
 ~~~
-./mail_parser-nix.sh sample.eml export_dir 'text/.*' 1000
+./mail-parser.sh sample.eml export_dir 'text/.*' 1000
 ~~~
 
 ## License

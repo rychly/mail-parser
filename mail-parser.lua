@@ -1,6 +1,6 @@
 -- Imports and dependencies (speed-up the symbols look-up by copying them into a small local namespace that is searched before the huge global namespace)
 local mime = require('mime') -- from luasocket, see http://w3.impa.br/~diego/software/luasocket/mime.html
-local convert_charsets = require('convert_charsets') -- from convert-charsets, see https://gitlab.com/rychly/convert-charsets
+local convert_charsets = require('convert-charsets') -- from convert-charsets, see https://gitlab.com/rychly/convert-charsets
 local lower, find, sub, gsub = string.lower, string.find, string.sub, string.gsub
 local stdin, stdout, stderr, open, close, read, write = io.stdin, io.stdout, io.stderr, io.open, io.close, io.read, io.write
 

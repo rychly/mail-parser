@@ -1,4 +1,4 @@
-package = "mail_parser"
+package = "mail-parser"
 version = "scm-1"
 source = {
 	url = "git+https://gitlab.com/rychly/mail-parser.git",
@@ -14,7 +14,7 @@ dependencies = {
 	"lua >= 5.1, < 5.4",
 	"luafilesystem",
 	"luasocket",
-	"convert_charsets"
+	"convert-charsets"
 }
 build = {
 	type = "make",

@@ -7,7 +7,7 @@ LUA_CONFDIR=$(PREFIX)/etc
 all:
 
 install:
-	mkdir -p $(LUA_LUADIR)/mail_parser
-	cp mail_parser.lua $(LUA_LUADIR)
+	mkdir -p $(LUA_LUADIR)
+	cp mail-parser.lua $(LUA_LUADIR)
 	mkdir -p $(LUA_BINDIR)
-	cp mail_parser-shell.sh $(LUA_BINDIR)/mail-parser
+	cp mail-parser.sh $(LUA_BINDIR)/mail-parser
