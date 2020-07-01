@@ -1,7 +1,5 @@
 let
 
-  name = "mail-parser";
-
   overlays = import ./overlays.nix;
 
 in
@@ -9,9 +7,7 @@ in
   # See https://garbas.si/2015/reproducible-development-environments.html
   { nixpkgs ? import <nixpkgs>, pkgs ? nixpkgs { inherit overlays; } }:
 
-pkgs.stdenv.mkDerivation rec {
-
-  inherit name;
+pkgs.mkShell rec {
 
   buildInputs = with pkgs; [
     (with luaPackagesCustom; luaPackages.lua.withPackages(ps: with ps; [ luafilesystem luasocket convert-charsets ]))
